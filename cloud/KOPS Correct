@@ -1,0 +1,88 @@
+MAIN CORRECT STEPS OF FULL KOPS
+https://kubernetes.io/docs/setup/production-environment/tools/kops/
+Don’t Refere this video just for Reference
+https://www.youtube.com/watch?v=6NymWMtcByg&t=1269s
+
+
+Install kubectl
+REFERENCE LINK -https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/
+
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+
+curl -LO "https://dl.k8s.io/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+
+echo "$(<kubectl.sha256) kubectl" | sha256sum --check
+
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+kubectl version --client
+
+
+INSTALL KOPS
+REFERENCE LINK https://github.com/kubernetes/kops/releases
+STEPS
+wget https://github.com/kubernetes/kops/releases/download/v1.21.0/kops-linux-amd64
+
+$ sudo chmod +x kops-linux-amd64                 # Add execution permissions
+$ sudo mv kops-linux-amd64 /usr/local/bin/kops   # Move the kops to /usr/local/bin
+Which kops
+Aws
+Create IAM USER 
+aws configure
+webpage -> go to route53 create hosted zone no need to create record anything 
+aws s3 ls
+
+ aws s3api create-bucket --bucket goodkube --create-bucket-configuration LocationConstraint=us-west-2
+
+   export KOPS_STATE_STORE=s3://goodkube
+cd .aws
+     ls
+    cat credentials
+   
+   cd
+    export aws_secret_access_key=dFeYtQf6ij0lfveSHQ82oWeLtXvuZn/xt3DXubDt
+    export aws_access_key_id=AKIATNLOTOBCVOWVBUF6
+
+
+This will give error like kops create secret --name ranjanijana.tk sshpublickey admin -i ~/.ssh/id_rsa.pub
+
+
+ls -a
+    cd .ssh
+   ls
+     ssh-keygen
+    ls
+     cd
+    kops create secret --name ranjanijana.tk sshpublickey admin -i ~/.ssh/id_rsa.pub
+
+    
+
+
+
+kops update cluster
+
+kops create cluster --zones=us-west-2a ranjanijana.tk
+
+kops get cluster
+ kops update cluster ranjanijana.tk --yes
+    kops validate cluster
+    clear
+   kops validate cluster
+
+
+
+
+
+As of kOps 1.19 there are two reasons you will suddenly get this error:
+    1. If you delete a cluster and reprovision it, your old admin is not removed from the kubeconfig and kOps/kubectl tries to reuse it.
+    2. New certificates have a TTL of 18h by default, so you need to reprovision them about once a day.
+Both issues above are fixed by running kops export kubecfg –admin
+
+kOps 1.19 reports error “Unauthorized” when interfacing with AWS cluster
+
+
+
+   kops export kubecfg --admin
+
+
+
