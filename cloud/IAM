@@ -1,0 +1,16 @@
+AKIATNLOTOBCXGUZZAEO
+8RNnkfPfv2jJvLt7jeJB8JSMfFud+udTe2zOSh0H
+
+mybucketgood
+
+aws s3 cp /home/ec2-user/dog s3://mybucketgood/ --recursive --aclpublic-read
+
+aws s3 cp /home/ec2-user/ s3://goodd/ --recursive --acl public-read-write
+
+
+AWS S3 CLI - Could not connect to the endpoint URL
+
+Check your file at ~/.aws/config, you have something like
+
+[default]
+region=us-east-1a

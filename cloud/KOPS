@@ -1,0 +1,117 @@
+curl -LO https://dl.k8s.io/release/v1.18.8/bin/linux/amd64/kubectl.sha256
+
+
+2lCMICS0PkNluzV8fWrxBxgNDQ8UbFEN+zhZCJDr
+
+
+additionalPolicies:
+    master: |
+      [
+        {
+          "Effect": "Allow",
+          "Action": [ "iam:CreateServiceLinkedRole"],
+          "Resource": ["*"]
+        }
+      ]
+
+
+
+ 311  kops create cluster --name ranjfirst.tk --cloud aws --master-zones us-east-1a --zones us-east-1a,us-east-1b,us-east-1c --node-count 2 --node-size t2.medium --master-count 1 --master-size t2.medium --topology public --kubernetes-version 1.20.0 --networking calico --cloud-labels "owner=ranj"
+
+kops create secret --name ranjfirst.tk sshpublickey admin -i ~/.ssh/id_rsa.pub
+
+  312  kops update cluster --name ranjfirst.tk --yes --admin
+  313  helm ls
+  314  kubectl cluster-info
+  315  kops validate cluster
+  316  kubectl get nodes
+  317  kops validate cluster
+  318  kubectl cluster-info
+  319  kubectl get pod
+  320  helm ls
+  321  v
+  322  helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+  323  helm repo update
+  324  v
+  325  helm install ingress-nginx ingress-nginx/ingress-nginx
+  326  helm ls
+  327  ls
+  328  cat myapp.yaml
+  329  kubectl apply -f myapp.yaml
+  330  kubectl get pod
+  331  kubectl get svc
+  332  ls
+
+  333  kops get cluster
+[
+  334  kops edit cluster ranjfirst.tk
+  335  kops update cluster ranjfirst.tk
+  336  kops update cluster ranjfirst.tk --yes
+  337  kops rolling-update cluster
+
+]
+  338  kops export kubecfg ranjfirst.tk --admin
+  339  ls
+  340  helm ls
+  341  vi ingress.yaml
+  342  kubectl apply -f ingress.yaml --dry-run-client
+  343  kubectl apply -f ingress.yaml --dry-run=client
+  344  kubectl apply -f ingressy.yaml
+  345  vi ingressy.yaml
+  346  kubectl apply -f ingressy.yaml
+  347  kubectl get pod
+  348*
+  349  vi ingressy.yaml
+  350  kubectl apply -f ingressy.yaml
+  351  kubectl logs ingress-nginx-controller-65c4f84996-dj2s8
+  352  kubectl get pod
+  353  kubectl logs -f ingress-nginx-controller-65c4f84996-jqk5z
+  354  kubectl get svc
+  355  kubectl get ing
+  356  kubectl logs -f ingress-nginx-controller-65c4f84996-jqk5z
+  357  history
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myingress
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /app1
+        pathType: Prefix
+        backend:
+          service:
+            name: app1-service
+            port:
+              number: 5678
+
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app1-app
+  labels:
+    app: app1
+spec:
+  containers:
+  - name: app1-app
+    image: hashicorp/http-echo
+    args:
+    - "-text=app1"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app1-service
+spec:
+  ports:
+  - port: 5678
+  selector:
+    app: app1
+

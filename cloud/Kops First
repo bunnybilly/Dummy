@@ -1,0 +1,46 @@
+[centos@kops ~]$ history
+    1  clear
+    2  sudo hostname kops
+    3  exec bash
+    4  clear
+    5  curl -LO https://dl.k8s.io/release/v1.20.0/bin/linux/amd64/kubectl
+    6  curl -LO "https://dl.k8s.io/$(curl -L -s https://dl.k8s.io/release/v1.22.0/bin/linux/amd64/kubectl
+)/bin/linux/amd64/kubectl.sha256"
+    7  curl -LO "https://dl.k8s.io/$(curl -L -s https://dl.k8s.io/release/v1.20.0)/bin/linux/amd64/kubectl.sha256"
+    8  echo "$(<kubectl.sha256) kubectl" | sha256sum --check
+    9  curl -LO "https://dl.k8s.io/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+   10  echo "$(<kubectl.sha256) kubectl" | sha256sum --check
+   11   curl -LO https://dl.k8s.io/release/v1.20.0/bin/linux/amd64/kubectl
+   12   curl -LO https://dl.k8s.io/release/v1.20.0/bin/linux/amd64/kubectl.sha256
+   13  echo "$(<kubectl.sha256) kubectl" | sha256sum --check
+   14  sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+   15  kubectl version --client
+   16  wget https://github.com/kubernetes/kops/releases/download/v1.20.1/kops-linux-amd64
+   17  sudo yum install wget
+   18  clear
+   19  sudo yum install wget
+   20  wget https://github.com/kubernetes/kops/releases/download/v1.20.1/kops-linux-amd64
+   21  chmod +x kops-linux-amd64
+   22  sudo mv kops-linux-amd64 /usr/local/bin/kops
+   23  which kops
+   24  clear
+   25  aws s3 ls
+   26  aws configure
+   27  clear
+   28  sudo yum install aws-cli
+   29  sudo yum install awscli
+   30  clear
+   31  aws s3 ls
+   32  aws configure
+   33  aws s3 ls
+   34  export KOPS_STATE_STORE=s3://allgood
+   35  cd .aws
+   36  ls
+   37  cat credentials
+   38  export aws_access_key_id=AKIATNLOTOBC5FV5DWSB
+   39  cd
+   40  export aws_access_key_id=AKIATNLOTOBC5FV5DWSB
+   41  export aws_secret_access_key=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
+   42  clear
+   43  history
+

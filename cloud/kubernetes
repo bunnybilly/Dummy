@@ -1,0 +1,1252 @@
+https://dpaste.org/55Dn 
+https://dpaste.org/55Dn
+About History New snippet
+Python Expires in: 7 minutes
+Delete Now
+Slim
+#!/bin/bash -xe
+#title           :sherlock-kops-upgrade.sh
+#description     :This script will upgrade the kops k8s version for both master and nodes
+#author          :XSRE
+#date            :20-Mar-20
+#version         :1.0
+#usage           : bash upgrade.sh --action upgradeClusterVersion --env <env> --cluster <clustername> --dryrun no --nk8s-version 1.15.11
+#                  bash upgrade.sh --action upgradeClusterVersion --env <env> --cluster <clustername> --dryrun no --nk8s-version 1.16.8 --ami-id ami-0ddc6743b3c2eab79
+#detailed docs   :
+#==============================================================================
+DATE=`date +%Y-%m-%d-%H-%M`
+SCRIPTNAME=$(basename $0)
+LOG="kops-upgrade-$DATE.log"
+[ -d K8S-UPGRADE-${DATE} ] && echo "Directory Exists" || mkdir K8S-UPGRADE-${DATE}
+readonly BACKUP_DIR="./K8S-UPGRADE-${DATE}"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+SET='\033[0m'
+
+function msg() {
+    local message="$1"
+    DATE_TIME=`date +%Y-%m-%d-%H:%M`
+    echo -e "$DATE_TIME - ${GREEN}INFO - $message${SET}"
+}
+function error_exit() {
+    local message="$1"
+    DATE_TIME=`date +%Y-%m-%d-%H:%M`
+    echo -e "$DATE_TIME - ${RED}ERROR - $message${SET}"
+    exit 1
+}
+function print_help () {
+      echo -e "Usage: ${SCRIPTNAME} --action <upgradeClusterVersion|rollBack> --env <ravi> --k8s-version <1.15.11> --dryrun  <yes|no> --cluster <ravi-u2.ntnxsherlock.com> "
+      echo "  --action <action>"
+      echo "  --env <ravi|dev|stage|prod>"
+      echo "  --cluster <ravi-u2.ntnxsherlock.com>"
+      echo "  --k8s-version <1.15.11|1.16.7>"
+      echo "  --dryrun <yes|no>"
+      echo "  Perform kubernetes version upgrade"
+}
+if [ -z "$1" ] && [ -z "$2" ]; then
+    print_help
+    exit 1
+fi
+while test -n "$1"; do
+   case "$1" in
+       --help)
+           print_help
+           ;;
+       -h)
+           print_help
+           ;;
+        --action)
+            ACTION=$2
+            shift
+            ;;
+        --env)
+            ENV=$2
+            shift
+            ;;
+        --cluster)
+            CLUSTER=$2
+            shift
+            ;;
+        --nk8s-version)
+            NKUBEVER=$2
+            shift
+            ;;
+        --ami-id)
+            AMIID=$2
+            shift
+            ;;
+        --ok8s-version)
+            OKUBEVER=$2
+            shift
+            ;;
+        --dryrun)
+            DRYRUN=$2
+            shift
+            ;;
+       *)
+            echo "Unknown argument: $1"
+            print_help
+            ;;
+    esac
+    shift
+done
+function installKtools {
+  if [ "$(uname)" == "Darwin" ]; then
+    msg "Installing and configuring kubectl"
+    wget -q https://storage.googleapis.com/kubernetes-release/release/v${NKUBEVER}/bin/darwin/amd64/kubectl
+    [ $? -eq 0 ] && msg "Successfully downloaded the kubectl packege" || error_exit "Unable to download the kubectl package"
+    chmod +x ./kubectl
+    [ $? -eq 0 ] && msg "Change the permission for kubectl packege" || error_exit "Unable to change the permission for kubectl package"
+    mv ./kubectl /usr/local/bin/kubectl
+    [ $? -eq 0 ] && msg "Configured the kubectl packege" || error_exit "Unable to Configure kubectl package"
+    KOPS=`echo $NKUBEVER | cut -c1-4`
+    msg "Installing Kops"
+    wget -q https://github.com/kubernetes/kops/releases/download/v${KOPS}.0/kops-darwin-amd64 || wget https://github.com/kubernetes/kops/releases/download/${KOPS}.0/kops-darwin-amd64
+    [ $? -eq 0 ] && msg "Successfully downloaded the kops packege" || error_exit "Unable to download the kops package"
+    chmod +x kops-darwin-amd64
+    [ $? -eq 0 ] && msg "Change the permission for kops packege" || error_exit "Unable to change the permission for kops package"
+    mv kops-darwin-amd64 /usr/local/bin/kops
+    [ $? -eq 0 ] && msg "Configured the kops package" || error_exit "Unable to Configure kops package"
+    msg "Kubectl version"
+    kubectl version --client
+    msg "kops version"
+    kops version
+  elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+      msg "Installing kubectl"
+      wget -q https://storage.googleapis.com/kubernetes-release/release/v${NKUBEVER}/bin/linux/amd64/kubectl
+      [ $? -eq 0 ] && msg "Successfully downloade the kubectl packege" || error_exit "Unable to download the kubectl package"
+      chmod +x ./kubectl
+      [ $? -eq 0 ] && msg "Change the permission for kubectl packege" || error_exit "Unable to change the permission for kubectl package"
+      mv ./kubectl /usr/local/bin/kubectl
+      [ $? -eq 0 ] && msg "Configured the kubectl package" || error_exit "Unable to Configure kubectl package"
+      KOPS=`echo $NKUBEVER | cut -c1-4`
+      msg "Installing Kops"
+      wget -q https://github.com/kubernetes/kops/releases/download/v${KOPS}.0/kops-linux-amd64 || wget https://github.com/kubernetes/kops/releases/download/${KOPS}.0/kops-linux-amd64
+      [ $? -eq 0 ] && msg "Successfully downloade the kops package" || error_exit "Unable to download the kops package"
+      chmod +x kops-linux-amd64
+      [ $? -eq 0 ] && msg "Change the permission for kops package" || error_exit "Unable to change the permission for kops package"
+      mv kops-linux-amd64 /usr/local/bin/kops
+      [ $? -eq 0 ] && msg "Configured the kops package" || error_exit "Unable to Configure kops package"
+      msg "Kubectl version"
+      kubectl version --client
+      msg "kops version"
+      kops version
+  fi
+}
+# Set the context
+function set_KubeConfig {
+    msg "Set the cluster context to admin, for the cluster ${CLUSTER}"
+    kops export kubecfg --name ${CLUSTER}
+    [ $? -eq 0 ] && msg "Exported the kube configuration from s3." || error_exit "Exection Failed: Cloud not able to exoprt the kube configuration from s3"
+    kubectl config use-context ${CLUSTER}
+    [ $? -eq 0 ] && msg "The admin context has been set to ${CLUSTER}." || error_exit "Exection Failed: Cloud not able to set kube context"
+}
+#After creating the EC2 cluster with the configured instances etc, wait for Amazon to start them and pass checks
+function validateCluster {
+  while [ 1 ]; do
+      msg "Started cluster Validation"
+      kops validate cluster --name ${CLUSTER} && break || sleep 30
+      [ $? -eq 0 ] && msg "Cluster validation inprogress" || error_exit "Cluster Validation Failed"
+  done;
+  msg "Cluster Validated Successfully, get the node status and kubernetes version"
+  kubectl get nodes -o wide
+}
+function get_master_ig(){
+  MASTER_IG=$(kops get ig | grep Master | awk '{print $1}')
+  export MASTER_IG
+}
+function get_node_ig(){
+  OLD_NODE_IG=$(kops get ig | grep Node | awk '{print $1}')
+  export OLD_NODE_IG
+}
+
+function get_old_nodes(){
+  OLD_NODES=$(kubectl get nodes | grep node | awk '{print $1}')
+  export OLD_NODES
+}
+
+function get_old_nodes_rb(){
+  OLD_NODES=$(kubectl get nodes --no-headers | awk '($2 != "Ready") { print $1 }')
+  export OLD_NODES
+}
+
+function get_new_nodes(){
+  NEW_NODES=$(kubectl get nodes --no-headers | awk '($2 == "Ready") { print $1 }')
+  export NEW_NODES
+}
+
+function is_master_ready()
+{
+	kubectl get nodes | grep "master" | grep -v -w "Ready"
+	if [ $? -eq 0 ] ;then
+		msg "Master nodes are not yet ready !!!!"
+		return 1
+	fi
+	msg "Master nodes are ready !!!!"
+	return 0
+}
+
+function is_node_ready()
+{
+  	kubectl get nodes | grep "node" | grep -v -w "Ready"
+  	if [ $? -eq 0 ] ;then
+		msg "Nodes are not yet ready !!!!"
+		return 1
+	fi
+	msg "Nodes are ready !!!!"
+	return 0
+}
+
+function areServicesRunning() {
+	if [[ ${CLUSTER} == *"dev"* ]];
+	then
+		num_of_pods=$(kubectl get pods -n test | grep -Ev "Running|Completed|NAMESPACE" | wc -l)
+	else
+    	num_of_pods=$(kubectl get pods --all-namespaces | grep -Ev "Running|Completed|NAMESPACE" | wc -l)
+  	fi
+  	if [ $num_of_pods -ne 0 ];
+  	then
+    		if [[ ${CLUSTER} == *"dev"* ]];
+    		then
+      			kubectl get pods -n test | grep -Ev "Running|Completed"
+    		else
+      			kubectl get pods --all-namespaces | grep -Ev "Running|Completed"
+    		fi
+    		error_exit "Above pods are not in running or completed state . Please fix them after execution!!!"
+  	else
+    		msg "All pods are in running state execution was successfull"
+  	fi
+}
+
+function areAllPodsInRunningState() {
+	if [[ ${CLUSTER} == *"dev"* ]];
+	then
+		kubectl get pods -n test | grep -Ev 'Running|Completed|NAMESPACE' > output
+	else
+    	kubectl get pods --all-namespaces | grep -Ev 'Running|Completed|NAMESPACE' > output
+	fi
+	num_of_pods=`cat output |wc -l`
+  	if [[ $num_of_pods -ne 0 ]];
+  	then
+    	count=1
+      	while [[ $count -lt 6 ]];
+		do
+			if [[ ${num_of_pods} -eq `cat output | grep -E 'devtools-daemonset|auditlog-cleaner' | wc -l` ]]
+			then
+				msg "Following pods have issue ...... !!! Fix them after execution"
+				cat output
+				break
+			fi
+			msg "Sleeping for 1 minute ..... Before retrying !!!"
+			sleep 60
+			kubectl get pods --all-namespaces | grep -Ev 'Running|Completed|NAMESPACE' > output
+    		num_of_pods=`cat output |wc -l`
+			count=`expr $count + 1`
+		done
+		
+		if [[ $count -eq 6 ]];then
+			echo  "Execution Failed: Pods are not yet ready !!! Cordoning is aborted "
+			exit
+  		fi
+	else
+		echo "All pods are in running state execution was successfull"
+	fi
+}
+
+function masterUpgrade(){
+  MONTH=$(date +"%b%d")
+  get_master_ig
+  if [ "$DRYRUN" = "yes" ] || [ "$DRYRUN" = "Yes" ]; then
+      msg "Dry run specified - It will change the kubernetes version to ${NKUBEVER} and then perform the update"
+      kops get --name ${CLUSTER} --state ${KOPS_STATE_STORE} -o yaml > ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+      lineCount=$(sed -n -e '/authenticationTokenWebhook/ p' -e '/authorizationMode/ p' ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml |wc -l)
+      if [ $lineCount -ne 2 ]; then
+          msg "Adding kubelet arguments"
+          if [ "$(uname)" == "Darwin" ]; then
+           sed -i ' ' '/anonymousAuth/ {a\
+            \    \authenticationTokenWebhook: true\
+            \    \authorizationMode: Webhook
+}' ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+          [ $? -eq 0 ] && msg "Kubelet arguments added " || error_exit "Kubelet Arguments could not be added"
+          else
+           sed -i '/anonymousAuth/a\    authenticationTokenWebhook: true\n    authorizationMode: Webhook' ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+           [ $? -eq 0 ] && msg "Kubelet arguments added " || error_exit "Kubelet Arguments could not be added"
+          fi
+      else
+          msg "Kubelet arguments already present , skipping"
+      fi
+      sed -ie "s/\(kubernetesVersion:\).*/\1 ${NKUBEVER}/" ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+      if [ "$AMIID" ];then
+         sed -ie "s/ami-[a-f0-9]\{17\}/$AMIID/g" ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+      fi
+      #sed -ie "/kubernetesVersion/c\  kubernetesVersion: ${NKUBEVER}" ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+      [ $? -eq 0 ] && msg "Updated the kubernetesVersion to ${NKUBEVER} in ${CLUSTER}-upgrade.yaml." || error_exit "Execution Failed: Cloud not able to updated ${NKUBEVERSION} in yaml file"
+      kops replace -f ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+      kops update cluster --name ${CLUSTER}
+  else
+    msg "Change the kubernetes version to ${NKUBEVER}"
+    kops get --name ${CLUSTER} --state ${KOPS_STATE_STORE} -o yaml > ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+    lineCount=$(sed -n -e '/authenticationTokenWebhook/ p' -e '/authorizationMode/ p' ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml |wc -l)
+    if [ $lineCount -ne 2 ]; then
+          msg "Adding kubelet arguments"
+          if [ "$(uname)" == "Darwin" ]; then
+           sed -i ' ' '/anonymousAuth/ {a\
+            \    \authenticationTokenWebhook: true\
+            \    \authorizationMode: Webhook
+}' ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+          [ $? -eq 0 ] && msg "Kubelet arguments added " || error_exit "Kubelet Arguments could not be added"
+          else
+           sed -i '/anonymousAuth/a\    authenticationTokenWebhook: true\n    authorizationMode: Webhook' ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+           [ $? -eq 0 ] && msg "Kubelet arguments added " || error_exit "Kubelet Arguments could not be added"
+          fi
+      else
+          msg "Kubelet arguments already present , skipping"
+      fi
+    sed -ie  "s/\(kubernetesVersion:\).*/\1 ${NKUBEVER}/" ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+    if [ "$AMIID" ];then
+      sed -ie "s/ami-[a-f0-9]\{17\}/$AMIID/g" ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+    fi
+    #sed -ie "/kubernetesVersion/c\  kubernetesVersion: ${NKUBEVERSION}" ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+    [ $? -eq 0 ] && msg "Updated the kubernetesVersion to ${NKUBEVER} in ${CLUSTER}-upgrade.yaml." || error_exit "Execution Failed: Cloud not able to updated ${NKUBEVERSION} in yaml file"
+    kops replace -f ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+    kops update cluster --name ${CLUSTER} --yes
+    for master in ${MASTER_IG}; do
+      msg "Starting Rolling update for Master: ${master}"
+      kops rolling-update cluster --instance-group ${master} --master-interval=6m --node-interval=6m --yes
+    done
+    count=0
+		while [ "$count" -ne 2 ];
+		do
+		  is_master_ready
+		  if [ $? -eq 0 ];then
+		    break
+		  fi
+		  msg "Retrying again in 60 seconds"
+		  sleep 60
+		  count=`expr $count + 1`
+		done
+		if [ "$count" -eq 2 ];then
+		  error_exit "Execution Failed: Master nodes are not ready!!!"
+		fi
+  fi
+}
+
+function create_ig (){
+  MONTH=$(date +"%b%d")
+  get_node_ig
+  if [ "$DRYRUN" = "yes" ] || [ "$DRYRUN" = "Yes" ]; then
+    for old_ig in ${OLD_NODE_IG}; do
+      ig=`echo ${old_ig} | cut -d"_" -f1`
+      filePath="./"${BACKUP_DIR}"/"${ig}"-"${MONTH}".yaml"
+      kops get ig ${old_ig} -o yaml > ./${BACKUP_DIR}/${old_ig}.bck
+      kops get ig ${old_ig} -o yaml > ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      if [ ! -f $filePath  ] && [ ! -s $filePath ]; then
+          			error_exit "Execution Failed: File "${BACKUP_DIR}"/"${ig}"-"${MONTH}".yaml  not created or content is empty "
+      			else
+        			msg "File "${BACKUP_DIR}"/"${ig}"-"${MONTH}".yaml  is created "
+      			fi
+      sed -i -e '/name/ s/'"${old_ig}"'/'"${ig}_${MONTH}"'/g' ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      sed -i -e '/instancegroup/ s/'"${old_ig}"'/'"${ig}_${MONTH}"'/g' ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      if [ "$AMIID" ];then
+        sed -ie "s/ami-[a-f0-9]\{17\}/$AMIID/g" ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      fi
+      [ $? -eq 0 ] && msg "Change the instance-group name to new instance-group names ${ig}_${MONTH}"
+      msg "Dry run - Below YAML will get created"
+      cat ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+    done
+  else
+    for old_ig in ${OLD_NODE_IG}; do
+      msg "Creating new Instance Group"
+      ig=`echo ${old_ig} | cut -d"_" -f1`
+      filePath="./"${BACKUP_DIR}"/"${ig}"-"${MONTH}".yaml"
+      kops get ig ${old_ig} -o yaml > ./${BACKUP_DIR}/${old_ig}.bck
+      kops get ig ${old_ig} -o yaml > ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      if [ ! -f $filePath  ] && [ ! -s $filePath ]; then
+          			error_exit "Execution Failed: File "${BACKUP_DIR}"/"${ig}"-"${MONTH}".yaml  not created or content is empty "
+      			else
+        			msg "File "${BACKUP_DIR}"/"${ig}"-"${MONTH}".yaml  is created "
+      			fi
+      sed -i -e '/name/ s/'"${old_ig}"'/'"${ig}_${MONTH}"'/g' ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      sed -i -e '/instancegroup/ s/'"${old_ig}"'/'"${ig}_${MONTH}"'/g' ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      if [ "$AMIID" ];then
+        sed -ie "s/ami-[a-f0-9]\{17\}/$AMIID/g" ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      fi
+      [ $? -eq 0 ] && msg "Change the instance-group name to new instance-group names ${ig}_${MONTH}"
+      kops create -f ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      [ $? -eq 0 ] && msg "Successfull created instancegroup ${ig}_${MONTH}"
+      msg "Performing the update cluster to apply changes"
+      kops update cluster --name ${CLUSTER} --yes
+      msg "Spining up new nodes will go in sleep now for 5 minutes for each instance-group"
+      sleep 300
+    done
+    	count=0
+		while [ "$count" -ne 2 ];
+		do
+		  is_node_ready
+		  if [ $? -eq 0 ];then
+		    break
+		  fi
+		  msg "Retrying again in 60 seconds"
+		  sleep 60
+		  count=`expr $count + 1`
+		done
+		if [ "$count" -eq 2 ];then
+		  error_exit "Execution Failed: Nodes are not ready!!!"
+		fi
+  fi
+}
+function cordon_old_node (){
+  for node in ${OLD_NODES}; do
+    if [ $DRYRUN = "yes" ]; then
+      msg "Node ${node} cordon "
+      kubectl cordon ${node} --dry-run
+    else
+      msg "Cordoning Old Nodes"
+      kubectl cordon ${node}
+      if [ $? -eq 0 ]; then
+          msg "Node ${node} cordon "
+        else
+            error_exit "Failed to cordon the ${node} - exiting"
+        fi
+    fi
+  done
+}
+function uncordon_old_node (){
+  for node in ${OLD_NODES}; do
+    if [ $DRYRUN = "yes" ]; then
+      msg "Node ${node} uncordon "
+      kubectl uncordon ${node} --dry-run
+    else
+      msg "Uncordoning Old Nodes"
+      kubectl uncordon ${node}
+      if [ $? -eq 0 ]; then
+          msg "Node ${node} uncordon"
+        else
+            error_exit "Failed to uncordon the ${node} - exiting"
+        fi
+    fi
+
+  done
+}
+function cordon_new_node (){
+  for node in ${NEW_NODES}; do
+    if [ $DRYRUN = "yes" ]; then
+      msg "Cordoning New Nodes: ${node}"
+      kubectl cordon ${node} --dry-run
+    else
+      msg "Cordoning New Nodes: ${node}"
+      kubectl cordon ${node}
+      if [ $? -eq 0 ]; then
+          msg "Node ${node} cordon - sleeping for 10 seconds"
+          sleep 10
+        else
+            error_exit "Failed to cordon the ${node} - exiting"
+        fi
+    fi
+
+  done
+}
+function drain_old_node (){
+  for node in ${OLD_NODES}; do
+    if [ $DRYRUN = "yes" ]; then
+      msg "Draining Old Nodes: ${node}"
+      kubectl drain ${node} --dry-run
+    else
+      msg "Draining Old Nodes: ${node} \n"
+      kubectl drain ${node} --ignore-daemonsets --delete-local-data &
+                        PID=$!
+                        sleep 60
+                        while ps -p $PID &>/dev/null;
+                        do
+                                kubectl get pods --all-namespaces | grep Terminating | awk '{print $2 " --namespace=" $1}' | xargs kubectl delete pod --grace-period=0 --force
+                        done
+      if [ $? -eq 0 ]; then
+                  msg "Node ${node} is drained - Sleeping for 1 minute"
+        sleep 60
+                  else
+                    echo "FAILED to drain the ${node} - exiting"
+            fi
+    fi
+  done
+  kops validate cluster
+  [ $? -eq 0 ] && msg "Cluster Validated Successfully" || error_exit "Cluster Validation Failed"
+}
+
+function drain_new_node (){
+  for node in ${NEW_NODES}; do
+    if [ $DRYRUN = "yes" ]; then
+      msg "Draining New Nodes: ${node}"
+      kubectl drain ${node} --dry-run
+    else
+      msg "Draining New Nodes: ${node}"
+      kubectl drain ${node} --ignore-daemonsets --delete-local-data &
+            PID=$!
+            sleep 60
+            while ps -p $PID &>/dev/null;
+            do
+                kubectl get pods --all-namespaces | grep Terminating | awk '{print $2 " --namespace=" $1}' | xargs kubectl delete pod --grace-period=0 --force
+            done
+      if [ $? -eq 0 ]; then
+          msg "Node ${node} is drained - Sleeping for 1 minute"
+        sleep 60
+        else
+            echo "FAILED to drain the ${node} - exiting"
+        fi
+    fi
+  done
+  set_KubeConfig
+  kops validate cluster
+  [ $? -eq 0 ] && msg "Cluster Validated Successfully" || error_exit "Cluster Validation Failed"
+}
+
+deploy() {
+  installKtools
+  set_KubeConfig
+  validateCluster
+  masterUpgrade
+  validateCluster
+  get_old_nodes
+  create_ig
+  areAllPodsInRunningState
+  cordon_old_node
+  drain_old_node
+  validateCluster
+  areServicesRunning
+}
+
+rollback(){
+  get_new_nodes
+  get_old_nodes_rb
+  uncordon_old_node
+  cordon_new_node
+  drain_new_node
+  areServicesRunning
+}
+
+main () {
+     ENV_LC=$(echo $ENV | awk '{print tolower($0)}')
+if [ "$DRYRUN" = "yes" ]; then
+     if [ "$ACTION" = "upgradeClusterVersion" ]; then
+          if [ "$ENV_LC" = "prod" ];then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "dev"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "stage"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "demo"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "ravi"  ]]; then
+               export KOPS_STATE_STORE="s3://ravi-ntnxsherlock.com"
+               deploy
+               msg "Successfull upgraded the cluster to ${NKUBEVER}"
+          fi
+     elif [[ $ACTION = "rollBack" ]]; then
+       if [ "$ENV_LC" = "prod" ];then
+            export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+            rollback
+            msg "Successfully rolled back the cluster"
+       elif [[ "$ENV_LC" = "dev"  ]]; then
+            export KOPS_STATE_STORE="ss3://sherlock-${ENV_LC}-kops-state-store"
+            rollback
+            msg "Successfully rolled back the cluster"
+       elif [[ "$ENV_LC" = "stage"  ]]; then
+            export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+            rollback
+            msg "Successfully rolled back the cluster"
+       elif [[ "$ENV_LC" = "demo"  ]]; then
+            export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+            rollback
+            msg "Successfully rolled back the cluster"
+       elif [[ "$ENV_LC" = "ravi"  ]]; then
+            export KOPS_STATE_STORE="s3://ravi-ntnxsherlock.com"
+            rollback
+            msg "Successfully rolled back the cluster"
+       fi
+     else
+          print_help
+     fi
+else
+     if [ "$ACTION" = "upgradeClusterVersion" ]; then
+          if [ "$ENV_LC" = "prod" ];then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "dev"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "stagessss"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "demossss"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgrade the clsuter kubernetesVersion to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "ravi"  ]]; then
+               export KOPS_STATE_STORE="s3://ravi-ntnxsherlock.com"
+               deploy
+               msg "Successfull upgraded the cluster to ${NKUBEVER}"
+          fi
+     elif [ "$ACTION" = "rollBack" ]; then
+          if [ "$ENV_LC" = "prodss" ];then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               rollback
+               msg "Successfully rolled back the cluster"
+          elif [[ "$ENV_LC" = "dev"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               rollback
+               msg "Successfully rolled back the cluster"
+          elif [[ "$ENV_LC" = "stagessss"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               rollback
+               msg "Successfully rolled back the cluster"
+          elif [[ "$ENV_LC" = "demossss"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               rollback
+               msg "Successfully rolled back the cluster"
+          elif [[ "$ENV_LC" = "ravi"  ]]; then
+               export KOPS_STATE_STORE="s3://ravi-ntnxsherlock.com"
+               rollback
+               msg "Successfully rolled back the cluster"
+          fi
+     else
+          print_help
+     fi
+fi
+}
+main
+
+Copy Snippet
+Edit Snippet
+ Wordwrap
+#!/bin/bash -xe
+#title           :sherlock-kops-upgrade.sh
+#description     :This script will upgrade the kops k8s version for both master and nodes
+#author          :XSRE
+#date            :20-Mar-20
+#version         :1.0
+#usage           : bash upgrade.sh --action upgradeClusterVersion --env <env> --cluster <clustername> --dryrun no --nk8s-version 1.15.11
+#                  bash upgrade.sh --action upgradeClusterVersion --env <env> --cluster <clustername> --dryrun no --nk8s-version 1.16.8 --ami-id ami-0ddc6743b3c2eab79
+#detailed docs   :
+#==============================================================================
+DATE=`date +%Y-%m-%d-%H-%M`
+SCRIPTNAME=$(basename $0)
+LOG="kops-upgrade-$DATE.log"
+[ -d K8S-UPGRADE-${DATE} ] && echo "Directory Exists" || mkdir K8S-UPGRADE-${DATE}
+readonly BACKUP_DIR="./K8S-UPGRADE-${DATE}"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+SET='\033[0m'
+​
+function msg() {
+    local message="$1"
+    DATE_TIME=`date +%Y-%m-%d-%H:%M`
+    echo -e "$DATE_TIME - ${GREEN}INFO - $message${SET}"
+}
+function error_exit() {
+    local message="$1"
+    DATE_TIME=`date +%Y-%m-%d-%H:%M`
+    echo -e "$DATE_TIME - ${RED}ERROR - $message${SET}"
+    exit 1
+}
+function print_help () {
+      echo -e "Usage: ${SCRIPTNAME} --action <upgradeClusterVersion|rollBack> --env <ravi> --k8s-version <1.15.11> --dryrun  <yes|no> --cluster <ravi-u2.ntnxsherlock.com> "
+      echo "  --action <action>"
+      echo "  --env <ravi|dev|stage|prod>"
+      echo "  --cluster <ravi-u2.ntnxsherlock.com>"
+      echo "  --k8s-version <1.15.11|1.16.7>"
+      echo "  --dryrun <yes|no>"
+      echo "  Perform kubernetes version upgrade"
+}
+if [ -z "$1" ] && [ -z "$2" ]; then
+    print_help
+    exit 1
+fi
+while test -n "$1"; do
+   case "$1" in
+       --help)
+           print_help
+           ;;
+       -h)
+           print_help
+           ;;
+        --action)
+            ACTION=$2
+            shift
+            ;;
+        --env)
+            ENV=$2
+            shift
+            ;;
+        --cluster)
+            CLUSTER=$2
+            shift
+            ;;
+        --nk8s-version)
+            NKUBEVER=$2
+            shift
+            ;;
+        --ami-id)
+            AMIID=$2
+            shift
+            ;;
+        --ok8s-version)
+            OKUBEVER=$2
+            shift
+            ;;
+        --dryrun)
+            DRYRUN=$2
+            shift
+            ;;
+       *)
+            echo "Unknown argument: $1"
+            print_help
+            ;;
+    esac
+    shift
+done
+function installKtools {
+  if [ "$(uname)" == "Darwin" ]; then
+    msg "Installing and configuring kubectl"
+    wget -q https://storage.googleapis.com/kubernetes-release/release/v${NKUBEVER}/bin/darwin/amd64/kubectl
+    [ $? -eq 0 ] && msg "Successfully downloaded the kubectl packege" || error_exit "Unable to download the kubectl package"
+    chmod +x ./kubectl
+    [ $? -eq 0 ] && msg "Change the permission for kubectl packege" || error_exit "Unable to change the permission for kubectl package"
+    mv ./kubectl /usr/local/bin/kubectl
+    [ $? -eq 0 ] && msg "Configured the kubectl packege" || error_exit "Unable to Configure kubectl package"
+    KOPS=`echo $NKUBEVER | cut -c1-4`
+    msg "Installing Kops"
+    wget -q https://github.com/kubernetes/kops/releases/download/v${KOPS}.0/kops-darwin-amd64 || wget https://github.com/kubernetes/kops/releases/download/${KOPS}.0/kops-darwin-amd64
+    [ $? -eq 0 ] && msg "Successfully downloaded the kops packege" || error_exit "Unable to download the kops package"
+    chmod +x kops-darwin-amd64
+    [ $? -eq 0 ] && msg "Change the permission for kops packege" || error_exit "Unable to change the permission for kops package"
+    mv kops-darwin-amd64 /usr/local/bin/kops
+    [ $? -eq 0 ] && msg "Configured the kops package" || error_exit "Unable to Configure kops package"
+    msg "Kubectl version"
+    kubectl version --client
+    msg "kops version"
+    kops version
+  elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+      msg "Installing kubectl"
+      wget -q https://storage.googleapis.com/kubernetes-release/release/v${NKUBEVER}/bin/linux/amd64/kubectl
+      [ $? -eq 0 ] && msg "Successfully downloade the kubectl packege" || error_exit "Unable to download the kubectl package"
+      chmod +x ./kubectl
+      [ $? -eq 0 ] && msg "Change the permission for kubectl packege" || error_exit "Unable to change the permission for kubectl package"
+      mv ./kubectl /usr/local/bin/kubectl
+      [ $? -eq 0 ] && msg "Configured the kubectl package" || error_exit "Unable to Configure kubectl package"
+      KOPS=`echo $NKUBEVER | cut -c1-4`
+      msg "Installing Kops"
+      wget -q https://github.com/kubernetes/kops/releases/download/v${KOPS}.0/kops-linux-amd64 || wget https://github.com/kubernetes/kops/releases/download/${KOPS}.0/kops-linux-amd64
+      [ $? -eq 0 ] && msg "Successfully downloade the kops package" || error_exit "Unable to download the kops package"
+      chmod +x kops-linux-amd64
+      [ $? -eq 0 ] && msg "Change the permission for kops package" || error_exit "Unable to change the permission for kops package"
+      mv kops-linux-amd64 /usr/local/bin/kops
+      [ $? -eq 0 ] && msg "Configured the kops package" || error_exit "Unable to Configure kops package"
+      msg "Kubectl version"
+      kubectl version --client
+      msg "kops version"
+      kops version
+  fi
+}
+# Set the context
+function set_KubeConfig {
+    msg "Set the cluster context to admin, for the cluster ${CLUSTER}"
+    kops export kubecfg --name ${CLUSTER}
+    [ $? -eq 0 ] && msg "Exported the kube configuration from s3." || error_exit "Exection Failed: Cloud not able to exoprt the kube configuration from s3"
+    kubectl config use-context ${CLUSTER}
+    [ $? -eq 0 ] && msg "The admin context has been set to ${CLUSTER}." || error_exit "Exection Failed: Cloud not able to set kube context"
+}
+#After creating the EC2 cluster with the configured instances etc, wait for Amazon to start them and pass checks
+function validateCluster {
+  while [ 1 ]; do
+      msg "Started cluster Validation"
+      kops validate cluster --name ${CLUSTER} && break || sleep 30
+      [ $? -eq 0 ] && msg "Cluster validation inprogress" || error_exit "Cluster Validation Failed"
+  done;
+  msg "Cluster Validated Successfully, get the node status and kubernetes version"
+  kubectl get nodes -o wide
+}
+function get_master_ig(){
+  MASTER_IG=$(kops get ig | grep Master | awk '{print $1}')
+  export MASTER_IG
+}
+function get_node_ig(){
+  OLD_NODE_IG=$(kops get ig | grep Node | awk '{print $1}')
+  export OLD_NODE_IG
+}
+​
+function get_old_nodes(){
+  OLD_NODES=$(kubectl get nodes | grep node | awk '{print $1}')
+  export OLD_NODES
+}
+​
+function get_old_nodes_rb(){
+  OLD_NODES=$(kubectl get nodes --no-headers | awk '($2 != "Ready") { print $1 }')
+  export OLD_NODES
+}
+​
+function get_new_nodes(){
+  NEW_NODES=$(kubectl get nodes --no-headers | awk '($2 == "Ready") { print $1 }')
+  export NEW_NODES
+}
+​
+function is_master_ready()
+{
+	kubectl get nodes | grep "master" | grep -v -w "Ready"
+	if [ $? -eq 0 ] ;then
+		msg "Master nodes are not yet ready !!!!"
+		return 1
+	fi
+	msg "Master nodes are ready !!!!"
+	return 0
+}
+​
+function is_node_ready()
+{
+  	kubectl get nodes | grep "node" | grep -v -w "Ready"
+  	if [ $? -eq 0 ] ;then
+		msg "Nodes are not yet ready !!!!"
+		return 1
+	fi
+	msg "Nodes are ready !!!!"
+	return 0
+}
+​
+function areServicesRunning() {
+	if [[ ${CLUSTER} == *"dev"* ]];
+	then
+		num_of_pods=$(kubectl get pods -n test | grep -Ev "Running|Completed|NAMESPACE" | wc -l)
+	else
+    	num_of_pods=$(kubectl get pods --all-namespaces | grep -Ev "Running|Completed|NAMESPACE" | wc -l)
+  	fi
+  	if [ $num_of_pods -ne 0 ];
+  	then
+    		if [[ ${CLUSTER} == *"dev"* ]];
+    		then
+      			kubectl get pods -n test | grep -Ev "Running|Completed"
+    		else
+      			kubectl get pods --all-namespaces | grep -Ev "Running|Completed"
+    		fi
+    		error_exit "Above pods are not in running or completed state . Please fix them after execution!!!"
+  	else
+    		msg "All pods are in running state execution was successfull"
+  	fi
+}
+​
+function areAllPodsInRunningState() {
+	if [[ ${CLUSTER} == *"dev"* ]];
+	then
+		kubectl get pods -n test | grep -Ev 'Running|Completed|NAMESPACE' > output
+	else
+    	kubectl get pods --all-namespaces | grep -Ev 'Running|Completed|NAMESPACE' > output
+	fi
+	num_of_pods=`cat output |wc -l`
+  	if [[ $num_of_pods -ne 0 ]];
+  	then
+    	count=1
+      	while [[ $count -lt 6 ]];
+		do
+			if [[ ${num_of_pods} -eq `cat output | grep -E 'devtools-daemonset|auditlog-cleaner' | wc -l` ]]
+			then
+				msg "Following pods have issue ...... !!! Fix them after execution"
+				cat output
+				break
+			fi
+			msg "Sleeping for 1 minute ..... Before retrying !!!"
+			sleep 60
+			kubectl get pods --all-namespaces | grep -Ev 'Running|Completed|NAMESPACE' > output
+    		num_of_pods=`cat output |wc -l`
+			count=`expr $count + 1`
+		done
+		
+		if [[ $count -eq 6 ]];then
+			echo  "Execution Failed: Pods are not yet ready !!! Cordoning is aborted "
+			exit
+  		fi
+	else
+		echo "All pods are in running state execution was successfull"
+	fi
+}
+​
+function masterUpgrade(){
+  MONTH=$(date +"%b%d")
+  get_master_ig
+  if [ "$DRYRUN" = "yes" ] || [ "$DRYRUN" = "Yes" ]; then
+      msg "Dry run specified - It will change the kubernetes version to ${NKUBEVER} and then perform the update"
+      kops get --name ${CLUSTER} --state ${KOPS_STATE_STORE} -o yaml > ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+      lineCount=$(sed -n -e '/authenticationTokenWebhook/ p' -e '/authorizationMode/ p' ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml |wc -l)
+      if [ $lineCount -ne 2 ]; then
+          msg "Adding kubelet arguments"
+          if [ "$(uname)" == "Darwin" ]; then
+           sed -i ' ' '/anonymousAuth/ {a\
+            \    \authenticationTokenWebhook: true\
+            \    \authorizationMode: Webhook
+}' ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+          [ $? -eq 0 ] && msg "Kubelet arguments added " || error_exit "Kubelet Arguments could not be added"
+          else
+           sed -i '/anonymousAuth/a\    authenticationTokenWebhook: true\n    authorizationMode: Webhook' ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+           [ $? -eq 0 ] && msg "Kubelet arguments added " || error_exit "Kubelet Arguments could not be added"
+          fi
+      else
+          msg "Kubelet arguments already present , skipping"
+      fi
+      sed -ie "s/\(kubernetesVersion:\).*/\1 ${NKUBEVER}/" ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+      if [ "$AMIID" ];then
+         sed -ie "s/ami-[a-f0-9]\{17\}/$AMIID/g" ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+      fi
+      #sed -ie "/kubernetesVersion/c\  kubernetesVersion: ${NKUBEVER}" ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+      [ $? -eq 0 ] && msg "Updated the kubernetesVersion to ${NKUBEVER} in ${CLUSTER}-upgrade.yaml." || error_exit "Execution Failed: Cloud not able to updated ${NKUBEVERSION} in yaml file"
+      kops replace -f ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+      kops update cluster --name ${CLUSTER}
+  else
+    msg "Change the kubernetes version to ${NKUBEVER}"
+    kops get --name ${CLUSTER} --state ${KOPS_STATE_STORE} -o yaml > ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+    lineCount=$(sed -n -e '/authenticationTokenWebhook/ p' -e '/authorizationMode/ p' ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml |wc -l)
+    if [ $lineCount -ne 2 ]; then
+          msg "Adding kubelet arguments"
+          if [ "$(uname)" == "Darwin" ]; then
+           sed -i ' ' '/anonymousAuth/ {a\
+            \    \authenticationTokenWebhook: true\
+            \    \authorizationMode: Webhook
+}' ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+          [ $? -eq 0 ] && msg "Kubelet arguments added " || error_exit "Kubelet Arguments could not be added"
+          else
+           sed -i '/anonymousAuth/a\    authenticationTokenWebhook: true\n    authorizationMode: Webhook' ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+           [ $? -eq 0 ] && msg "Kubelet arguments added " || error_exit "Kubelet Arguments could not be added"
+          fi
+      else
+          msg "Kubelet arguments already present , skipping"
+      fi
+    sed -ie  "s/\(kubernetesVersion:\).*/\1 ${NKUBEVER}/" ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+    if [ "$AMIID" ];then
+      sed -ie "s/ami-[a-f0-9]\{17\}/$AMIID/g" ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+    fi
+    #sed -ie "/kubernetesVersion/c\  kubernetesVersion: ${NKUBEVERSION}" ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+    [ $? -eq 0 ] && msg "Updated the kubernetesVersion to ${NKUBEVER} in ${CLUSTER}-upgrade.yaml." || error_exit "Execution Failed: Cloud not able to updated ${NKUBEVERSION} in yaml file"
+    kops replace -f ./${BACKUP_DIR}/${CLUSTER}-${MONTH}.yaml
+    kops update cluster --name ${CLUSTER} --yes
+    for master in ${MASTER_IG}; do
+      msg "Starting Rolling update for Master: ${master}"
+      kops rolling-update cluster --instance-group ${master} --master-interval=6m --node-interval=6m --yes
+    done
+    count=0
+		while [ "$count" -ne 2 ];
+		do
+		  is_master_ready
+		  if [ $? -eq 0 ];then
+		    break
+		  fi
+		  msg "Retrying again in 60 seconds"
+		  sleep 60
+		  count=`expr $count + 1`
+		done
+		if [ "$count" -eq 2 ];then
+		  error_exit "Execution Failed: Master nodes are not ready!!!"
+		fi
+  fi
+}
+​
+function create_ig (){
+  MONTH=$(date +"%b%d")
+  get_node_ig
+  if [ "$DRYRUN" = "yes" ] || [ "$DRYRUN" = "Yes" ]; then
+    for old_ig in ${OLD_NODE_IG}; do
+      ig=`echo ${old_ig} | cut -d"_" -f1`
+      filePath="./"${BACKUP_DIR}"/"${ig}"-"${MONTH}".yaml"
+      kops get ig ${old_ig} -o yaml > ./${BACKUP_DIR}/${old_ig}.bck
+      kops get ig ${old_ig} -o yaml > ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      if [ ! -f $filePath  ] && [ ! -s $filePath ]; then
+          			error_exit "Execution Failed: File "${BACKUP_DIR}"/"${ig}"-"${MONTH}".yaml  not created or content is empty "
+      			else
+        			msg "File "${BACKUP_DIR}"/"${ig}"-"${MONTH}".yaml  is created "
+      			fi
+      sed -i -e '/name/ s/'"${old_ig}"'/'"${ig}_${MONTH}"'/g' ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      sed -i -e '/instancegroup/ s/'"${old_ig}"'/'"${ig}_${MONTH}"'/g' ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      if [ "$AMIID" ];then
+        sed -ie "s/ami-[a-f0-9]\{17\}/$AMIID/g" ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      fi
+      [ $? -eq 0 ] && msg "Change the instance-group name to new instance-group names ${ig}_${MONTH}"
+      msg "Dry run - Below YAML will get created"
+      cat ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+    done
+  else
+    for old_ig in ${OLD_NODE_IG}; do
+      msg "Creating new Instance Group"
+      ig=`echo ${old_ig} | cut -d"_" -f1`
+      filePath="./"${BACKUP_DIR}"/"${ig}"-"${MONTH}".yaml"
+      kops get ig ${old_ig} -o yaml > ./${BACKUP_DIR}/${old_ig}.bck
+      kops get ig ${old_ig} -o yaml > ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      if [ ! -f $filePath  ] && [ ! -s $filePath ]; then
+          			error_exit "Execution Failed: File "${BACKUP_DIR}"/"${ig}"-"${MONTH}".yaml  not created or content is empty "
+      			else
+        			msg "File "${BACKUP_DIR}"/"${ig}"-"${MONTH}".yaml  is created "
+      			fi
+      sed -i -e '/name/ s/'"${old_ig}"'/'"${ig}_${MONTH}"'/g' ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      sed -i -e '/instancegroup/ s/'"${old_ig}"'/'"${ig}_${MONTH}"'/g' ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      if [ "$AMIID" ];then
+        sed -ie "s/ami-[a-f0-9]\{17\}/$AMIID/g" ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      fi
+      [ $? -eq 0 ] && msg "Change the instance-group name to new instance-group names ${ig}_${MONTH}"
+      kops create -f ./${BACKUP_DIR}/${ig}-${MONTH}.yaml
+      [ $? -eq 0 ] && msg "Successfull created instancegroup ${ig}_${MONTH}"
+      msg "Performing the update cluster to apply changes"
+      kops update cluster --name ${CLUSTER} --yes
+      msg "Spining up new nodes will go in sleep now for 5 minutes for each instance-group"
+      sleep 300
+    done
+    	count=0
+		while [ "$count" -ne 2 ];
+		do
+		  is_node_ready
+		  if [ $? -eq 0 ];then
+		    break
+		  fi
+		  msg "Retrying again in 60 seconds"
+		  sleep 60
+		  count=`expr $count + 1`
+		done
+		if [ "$count" -eq 2 ];then
+		  error_exit "Execution Failed: Nodes are not ready!!!"
+		fi
+  fi
+}
+function cordon_old_node (){
+  for node in ${OLD_NODES}; do
+    if [ $DRYRUN = "yes" ]; then
+      msg "Node ${node} cordon "
+      kubectl cordon ${node} --dry-run
+    else
+      msg "Cordoning Old Nodes"
+      kubectl cordon ${node}
+      if [ $? -eq 0 ]; then
+          msg "Node ${node} cordon "
+        else
+            error_exit "Failed to cordon the ${node} - exiting"
+        fi
+    fi
+  done
+}
+function uncordon_old_node (){
+  for node in ${OLD_NODES}; do
+    if [ $DRYRUN = "yes" ]; then
+      msg "Node ${node} uncordon "
+      kubectl uncordon ${node} --dry-run
+    else
+      msg "Uncordoning Old Nodes"
+      kubectl uncordon ${node}
+      if [ $? -eq 0 ]; then
+          msg "Node ${node} uncordon"
+        else
+            error_exit "Failed to uncordon the ${node} - exiting"
+        fi
+    fi
+​
+  done
+}
+function cordon_new_node (){
+  for node in ${NEW_NODES}; do
+    if [ $DRYRUN = "yes" ]; then
+      msg "Cordoning New Nodes: ${node}"
+      kubectl cordon ${node} --dry-run
+    else
+      msg "Cordoning New Nodes: ${node}"
+      kubectl cordon ${node}
+      if [ $? -eq 0 ]; then
+          msg "Node ${node} cordon - sleeping for 10 seconds"
+          sleep 10
+        else
+            error_exit "Failed to cordon the ${node} - exiting"
+        fi
+    fi
+​
+  done
+}
+function drain_old_node (){
+  for node in ${OLD_NODES}; do
+    if [ $DRYRUN = "yes" ]; then
+      msg "Draining Old Nodes: ${node}"
+      kubectl drain ${node} --dry-run
+    else
+      msg "Draining Old Nodes: ${node} \n"
+      kubectl drain ${node} --ignore-daemonsets --delete-local-data &
+                        PID=$!
+                        sleep 60
+                        while ps -p $PID &>/dev/null;
+                        do
+                                kubectl get pods --all-namespaces | grep Terminating | awk '{print $2 " --namespace=" $1}' | xargs kubectl delete pod --grace-period=0 --force
+                        done
+      if [ $? -eq 0 ]; then
+                  msg "Node ${node} is drained - Sleeping for 1 minute"
+        sleep 60
+                  else
+                    echo "FAILED to drain the ${node} - exiting"
+            fi
+    fi
+  done
+  kops validate cluster
+  [ $? -eq 0 ] && msg "Cluster Validated Successfully" || error_exit "Cluster Validation Failed"
+}
+​
+function drain_new_node (){
+  for node in ${NEW_NODES}; do
+    if [ $DRYRUN = "yes" ]; then
+      msg "Draining New Nodes: ${node}"
+      kubectl drain ${node} --dry-run
+    else
+      msg "Draining New Nodes: ${node}"
+      kubectl drain ${node} --ignore-daemonsets --delete-local-data &
+            PID=$!
+            sleep 60
+            while ps -p $PID &>/dev/null;
+            do
+                kubectl get pods --all-namespaces | grep Terminating | awk '{print $2 " --namespace=" $1}' | xargs kubectl delete pod --grace-period=0 --force
+            done
+      if [ $? -eq 0 ]; then
+          msg "Node ${node} is drained - Sleeping for 1 minute"
+        sleep 60
+        else
+            echo "FAILED to drain the ${node} - exiting"
+        fi
+    fi
+  done
+  set_KubeConfig
+  kops validate cluster
+  [ $? -eq 0 ] && msg "Cluster Validated Successfully" || error_exit "Cluster Validation Failed"
+}
+​
+deploy() {
+  installKtools
+  set_KubeConfig
+  validateCluster
+  masterUpgrade
+  validateCluster
+  get_old_nodes
+  create_ig
+  areAllPodsInRunningState
+  cordon_old_node
+  drain_old_node
+  validateCluster
+  areServicesRunning
+}
+​
+rollback(){
+  get_new_nodes
+  get_old_nodes_rb
+  uncordon_old_node
+  cordon_new_node
+  drain_new_node
+  areServicesRunning
+}
+​
+main () {
+     ENV_LC=$(echo $ENV | awk '{print tolower($0)}')
+if [ "$DRYRUN" = "yes" ]; then
+     if [ "$ACTION" = "upgradeClusterVersion" ]; then
+          if [ "$ENV_LC" = "prod" ];then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "dev"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "stage"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "demo"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "ravi"  ]]; then
+               export KOPS_STATE_STORE="s3://ravi-ntnxsherlock.com"
+               deploy
+               msg "Successfull upgraded the cluster to ${NKUBEVER}"
+          fi
+     elif [[ $ACTION = "rollBack" ]]; then
+       if [ "$ENV_LC" = "prod" ];then
+            export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+            rollback
+            msg "Successfully rolled back the cluster"
+       elif [[ "$ENV_LC" = "dev"  ]]; then
+            export KOPS_STATE_STORE="ss3://sherlock-${ENV_LC}-kops-state-store"
+            rollback
+            msg "Successfully rolled back the cluster"
+       elif [[ "$ENV_LC" = "stage"  ]]; then
+            export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+            rollback
+            msg "Successfully rolled back the cluster"
+       elif [[ "$ENV_LC" = "demo"  ]]; then
+            export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+            rollback
+            msg "Successfully rolled back the cluster"
+       elif [[ "$ENV_LC" = "ravi"  ]]; then
+            export KOPS_STATE_STORE="s3://ravi-ntnxsherlock.com"
+            rollback
+            msg "Successfully rolled back the cluster"
+       fi
+     else
+          print_help
+     fi
+else
+     if [ "$ACTION" = "upgradeClusterVersion" ]; then
+          if [ "$ENV_LC" = "prod" ];then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "dev"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "stagessss"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgraded the clsuter to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "demossss"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               deploy
+               msg "Successfull upgrade the clsuter kubernetesVersion to ${NKUBEVER}"
+          elif [[ "$ENV_LC" = "ravi"  ]]; then
+               export KOPS_STATE_STORE="s3://ravi-ntnxsherlock.com"
+               deploy
+               msg "Successfull upgraded the cluster to ${NKUBEVER}"
+          fi
+     elif [ "$ACTION" = "rollBack" ]; then
+          if [ "$ENV_LC" = "prodss" ];then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               rollback
+               msg "Successfully rolled back the cluster"
+          elif [[ "$ENV_LC" = "dev"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               rollback
+               msg "Successfully rolled back the cluster"
+          elif [[ "$ENV_LC" = "stagessss"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               rollback
+               msg "Successfully rolled back the cluster"
+          elif [[ "$ENV_LC" = "demossss"  ]]; then
+               export KOPS_STATE_STORE="s3://sherlock-${ENV_LC}-kops-state-store"
+               rollback
+               msg "Successfully rolled back the cluster"
+          elif [[ "$ENV_LC" = "ravi"  ]]; then
+               export KOPS_STATE_STORE="s3://ravi-ntnxsherlock.com"
+               rollback
+               msg "Successfully rolled back the cluster"
+          fi
+     else
+          print_help
+     fi
+fi
+}
+main
